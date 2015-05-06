@@ -227,7 +227,7 @@ PHP_SOPHIA_METHOD(Db, set)
 PHP_SOPHIA_METHOD(Db, get)
 {
     php_sp_db_t *intern;
-    char *key = NULL, *value = NULL, *request = NULL;
+    char *key = NULL, *value = NULL;
     int key_len = 0, value_len = 0;
     void *object, *result;
 
@@ -259,10 +259,6 @@ PHP_SOPHIA_METHOD(Db, get)
         sp_destroy(result);
     } else {
         RETVAL_FALSE;
-    }
-
-    if (request) {
-        sp_destroy(request);
     }
 }
 
