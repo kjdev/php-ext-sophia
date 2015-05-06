@@ -43,6 +43,7 @@ Sophia\Db {
   public bool set( string $key, string $value )
   public mixed get( string $key )
   public bool delete( string $key )
+  public bool close ( void )
   public bool begin( void )
   public bool commit( void )
   public bool rollback( void )

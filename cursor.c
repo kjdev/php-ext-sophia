@@ -203,6 +203,7 @@ PHP_SOPHIA_METHOD(Cursor, current)
     php_sp_cursor_t *intern;
     char *value = NULL;
     int value_len = 0;
+    void *object;
 
     if (zend_parse_parameters_none() == FAILURE) {
         RETURN_FALSE;
@@ -211,7 +212,11 @@ PHP_SOPHIA_METHOD(Cursor, current)
     PHP_SP_CURSOR_OBJ(intern, getThis(), 1);
 
     if (!intern->sophia.current) {
-        RETURN_FALSE;
+        object = sp_object(intern->sophia.db);
+        intern->sophia.current = sp_get(intern->sophia.cursor, object);
+        if (!intern->sophia.current) {
+            RETURN_FALSE;
+        }
     }
 
     value = sp_get(intern->sophia.current, "value", &value_len);
@@ -295,7 +300,8 @@ php_sp_cursor_free_storage(void *object TSRMLS_DC)
         sp_destroy(intern->sophia.current);
     }
 
-    if (intern->sophia.cursor) {
+    if (intern->sophia.cursor &&
+        php_sp_db_object_get_database(intern->db TSRMLS_CC)) {
         sp_destroy(intern->sophia.cursor);
     }
 

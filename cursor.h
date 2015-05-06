@@ -53,8 +53,8 @@ PHP_SOPHIA_API void php_sp_cursor_construct(zval *return_value, zval *db, char *
 #define PHP_SP_CURSOR_OBJ(self, obj, check) \
     do { \
         self = (php_sp_cursor_t *)zend_object_store_get_object(obj TSRMLS_CC); \
-        if ((check) && !(self)->sophia.db && !(self)->sophia.cursor) { \
-            PHP_SP_EXCEPTION(0, "Can not operate on closed cursor"); \
+        if ((check) && !(php_sp_db_object_get_database((self)->db TSRMLS_CC) && (self)->sophia.cursor)) { \
+            PHP_SP_EXCEPTION(0, "Can not iterate on closed database"); \
             return; \
         } \
     } while(0)

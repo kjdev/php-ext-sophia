@@ -66,6 +66,9 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO_EX(arginfo_sp_db_drop, 0, ZEND_RETURN_VALUE, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_sp_db_close, 0, ZEND_RETURN_VALUE, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_sp_db_cursor, 0, ZEND_RETURN_VALUE, 0)
     ZEND_ARG_INFO(0, order)
     ZEND_ARG_INFO(0, key)
@@ -126,9 +129,13 @@ PHP_SOPHIA_METHOD(Db, __construct)
         if (!sophia_path || strlen(sophia_path) == 0) {
             sophia_path = PHP_SOPHIA_DEFAULT_PATH;
         }
-
-        sp_set(intern->ctl, "sophia.path", sophia_path);
     }
+
+    if (php_check_open_basedir(sophia_path TSRMLS_CC) ) {
+        RETURN_FALSE;
+    }
+
+    sp_set(intern->ctl, "sophia.path", sophia_path);
 
     if (!log_path) {
         log_path = (char *)emalloc(strlen(sophia_path) + db_len + 6);
@@ -139,6 +146,9 @@ PHP_SOPHIA_METHOD(Db, __construct)
         php_sprintf(log_path, "%s/%.*s.log", sophia_path, db_len, db);
         sp_set(intern->ctl, "log.path", log_path);
     } else {
+        if (php_check_open_basedir(log_path TSRMLS_CC) ) {
+            RETURN_FALSE;
+        }
         log_path = NULL;
     }
 
@@ -360,6 +370,30 @@ PHP_SOPHIA_METHOD(Db, rollback)
     RETURN_TRUE;
 }
 
+PHP_SOPHIA_METHOD(Db, close)
+{
+    php_sp_db_t *intern;
+
+    if (zend_parse_parameters_none() == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    PHP_SP_DB_OBJ(intern, getThis(), 1);
+
+    if (intern->env) {
+        if (sp_destroy(intern->env) == -1) {
+            PHP_SP_ERR(E_WARNING, "Error db close");
+        }
+    }
+
+    intern->env = NULL;
+    intern->ctl = NULL;
+    intern->db = NULL;
+    intern->transaction = NULL;
+
+    RETURN_TRUE;
+}
+
 PHP_SOPHIA_METHOD(Db, drop)
 {
     php_sp_db_t *intern;
@@ -422,6 +456,7 @@ static zend_function_entry php_sp_db_methods[] = {
     PHP_SOPHIA_ME(Db, begin, arginfo_sp_db_begin, ZEND_ACC_PUBLIC)
     PHP_SOPHIA_ME(Db, commit, arginfo_sp_db_commit, ZEND_ACC_PUBLIC)
     PHP_SOPHIA_ME(Db, rollback, arginfo_sp_db_rollback, ZEND_ACC_PUBLIC)
+    PHP_SOPHIA_ME(Db, close, arginfo_sp_db_close, ZEND_ACC_PUBLIC)
     PHP_SOPHIA_ME(Db, drop, arginfo_sp_db_drop, ZEND_ACC_PUBLIC)
     PHP_SOPHIA_ME(Db, cursor, arginfo_sp_db_cursor, ZEND_ACC_PUBLIC)
     ZEND_FE_END
