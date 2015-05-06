@@ -80,6 +80,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
     char *db, *db_name = NULL, *log_path = NULL, *sophia_path = NULL;
     int db_len;
     zval *options = NULL;
+    zend_bool log_path_free = 0;
 
     if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|a",
                               &db, &db_len, &options) == FAILURE) {
@@ -93,36 +94,25 @@ PHP_SOPHIA_METHOD(Db, __construct)
 
     PHP_SP_DB_OBJ(intern, getThis(), 0);
 
-    /* create sophia environment */
-    intern->env = sp_env();
-    intern->ctl = sp_ctl(intern->env);
-
+    /* get path options */
     if (options) {
-        zval **value;
-        uint key_len;
-        char *key;
-        ulong key_index;
+        zval **path;
+        if (zend_hash_find(Z_ARRVAL_P(options),
+                           "sophia.path", sizeof("sophia.path"),
+                           (void **)&path) != FAILURE && path) {
+            sophia_path = Z_STRVAL_PP(path);
+        }
 
-        for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(options));
-             zend_hash_get_current_data(Z_ARRVAL_P(options),
-                                        (void *)&value) == SUCCESS;
-             zend_hash_move_forward(Z_ARRVAL_P(options))) {
-            if (zend_hash_get_current_key_ex(Z_ARRVAL_P(options),
-                                             &key, &key_len, &key_index,
-                                             0, NULL) == HASH_KEY_IS_STRING
-                && Z_TYPE_PP(value) == IS_STRING) {
-                if (sp_set(intern->ctl, key, Z_STRVAL_PP(value)) == -1) {
-                    PHP_SP_ERR(E_WARNING, "Error set option: %s", key);
-                } else if (strcmp(key, "sophia.path") == 0) {
-                    sophia_path = Z_STRVAL_PP(value);
-                } else if (strcmp(key, "log.path") == 0) {
-                    log_path = Z_STRVAL_PP(value);
-                }
-            }
+        if (zend_hash_find(Z_ARRVAL_P(options),
+                           "log.path", sizeof("log.path"),
+                           (void **)&path) != FAILURE && path) {
+            log_path = Z_STRVAL_PP(path);
         }
     }
 
-    /* sp_set(intern->ctl, "scheduler.threads", "0"); */
+    /* create sophia environment */
+    intern->env = sp_env();
+    intern->ctl = sp_ctl(intern->env);
 
     if (!sophia_path || strlen(sophia_path) == 0) {
         sophia_path = PHP_SOPHIA_G(path);
@@ -144,18 +134,18 @@ PHP_SOPHIA_METHOD(Db, __construct)
             RETURN_FALSE;
         }
         php_sprintf(log_path, "%s/%.*s.log", sophia_path, db_len, db);
-        sp_set(intern->ctl, "log.path", log_path);
-    } else {
-        if (php_check_open_basedir(log_path TSRMLS_CC) ) {
-            RETURN_FALSE;
-        }
-        log_path = NULL;
+        log_path_free = 1;
     }
+
+    if (php_check_open_basedir(log_path TSRMLS_CC) ) {
+        RETURN_FALSE;
+    }
+    sp_set(intern->ctl, "log.path", log_path);
 
     /* create/open database */
     db_name = (char *)emalloc(db_len + 4);
     if (!db_name) {
-        if (log_path) {
+        if (log_path && log_path_free) {
             efree(log_path);
         }
         PHP_SP_EXCEPTION(0, "memory allocate");
@@ -165,9 +155,33 @@ PHP_SOPHIA_METHOD(Db, __construct)
 
     sp_set(intern->ctl, "db", db);
 
+    /* set options */
+    if (options) {
+        zval **value;
+        uint key_len;
+        char *key;
+        ulong key_index;
+
+        for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(options));
+             zend_hash_get_current_data(Z_ARRVAL_P(options),
+                                        (void *)&value) == SUCCESS;
+             zend_hash_move_forward(Z_ARRVAL_P(options))) {
+            if (zend_hash_get_current_key_ex(Z_ARRVAL_P(options),
+                                             &key, &key_len, &key_index,
+                                             0, NULL) == HASH_KEY_IS_STRING
+                && Z_TYPE_PP(value) == IS_STRING
+                && strcmp(key, "sophia.path") != 0
+                && strcmp(key, "log.path") != 0) {
+                if (sp_set(intern->ctl, key, Z_STRVAL_PP(value)) == -1) {
+                    PHP_SP_ERR(E_WARNING, "Error set option: %s", key);
+                }
+            }
+        }
+    }
+
     if (sp_open(intern->env) == -1) {
         efree(db_name);
-        if (log_path) {
+        if (log_path && log_path_free) {
             efree(log_path);
         }
         PHP_SP_EXCEPTION(0, "create or open database error: %s", db);
@@ -177,7 +191,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
     intern->db = sp_get(intern->ctl, db_name);
     if (!intern->db) {
         efree(db_name);
-        if (log_path) {
+        if (log_path && log_path_free) {
             efree(log_path);
         }
         PHP_SP_EXCEPTION(0, "create or open database error: %s", db);
@@ -185,7 +199,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
     }
 
     efree(db_name);
-    if (log_path) {
+    if (log_path && log_path_free) {
         efree(log_path);
     }
 }
