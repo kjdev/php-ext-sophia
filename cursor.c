@@ -49,7 +49,7 @@ ZEND_END_ARG_INFO()
 
 static void
 php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
-                     char *key, int key_len TSRMLS_DC)
+                     zval *key TSRMLS_DC)
 {
     php_sp_cursor_t *intern;
     void *database, *object;
@@ -64,11 +64,6 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
         smart_str_0(&intern->order);
     }
 
-    if (key && key_len > 0) {
-        smart_str_appendl(&intern->key, key, key_len);
-        smart_str_0(&intern->key);
-    }
-
     intern->sophia.db = php_sp_db_object_get_database(db TSRMLS_CC);
     if (!intern->sophia.db) {
         PHP_SP_EXCEPTION(0, "Can not database object");
@@ -78,12 +73,64 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
     object = sp_object(intern->sophia.db);
 
     if (intern->order.c) {
-        if (intern->key.c) {
-            sp_set(object, "key", intern->key.c, intern->key.len);
-        }
         if (sp_set(object, "order", intern->order.c) == -1) {
             smart_str_free(&intern->order);
             PHP_SP_ERR(E_WARNING, "Error iteration order set");
+        }
+    }
+
+    if (key) {
+        MAKE_STD_ZVAL(intern->key);
+        array_init(intern->key);
+
+        switch (Z_TYPE_P(key)) {
+            default:
+                convert_to_string(key);
+            case IS_STRING:
+                sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+                zend_hash_add(Z_ARRVAL_P(intern->key), "key", sizeof("key"),
+                              &key, sizeof(zval*), NULL);
+                zval_add_ref(&key);
+                break;
+            case IS_ARRAY: {
+                zval **index;
+                uint str_key_len;
+                char *str_key;
+                ulong index_key;
+                uint32_t n;
+
+                for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(key));
+                     zend_hash_get_current_data(Z_ARRVAL_P(key),
+                                                (void *)&index) == SUCCESS;
+                     zend_hash_move_forward(Z_ARRVAL_P(key))) {
+                    if (zend_hash_get_current_key_ex(
+                            Z_ARRVAL_P(key), &str_key, &str_key_len,
+                            &index_key, 0, NULL) == HASH_KEY_IS_STRING) {
+                        switch (Z_TYPE_PP(index)) {
+                            case IS_STRING:
+                                sp_set(object, str_key,
+                                       Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                                zend_hash_add(Z_ARRVAL_P(intern->key),
+                                              str_key, str_key_len,
+                                              index, sizeof(zval*), NULL);
+                                zval_add_ref(index);
+                                break;
+                            case IS_LONG:
+                                sp_set(object, str_key,
+                                       &Z_LVAL_PP(index),
+                                       sizeof(Z_LVAL_PP(index)));
+                                zend_hash_add(Z_ARRVAL_P(intern->key),
+                                              str_key, str_key_len,
+                                              index, sizeof(zval*), NULL);
+                                zval_add_ref(index);
+                                break;
+                            default:
+                                PHP_SP_ERR(E_WARNING, "Invalid key type");
+                        }
+                    }
+                }
+                break;
+            }
         }
     }
 
@@ -99,18 +146,17 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
 PHP_SOPHIA_METHOD(Cursor, __construct)
 {
     zval *db;
-    char *order = NULL, *key = NULL;
-    int order_len = 0, key_len = 0;
+    char *order = NULL;
+    int order_len = 0;
+    zval *key = NULL;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O|ss",
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O|sz",
                               &db, php_sp_db_ce,
-                              &order, &order_len,
-                              &key, &key_len) == FAILURE) {
+                              &order, &order_len, &key) == FAILURE) {
         RETURN_FALSE;
     }
 
-    php_sp_cursor_create(getThis(), db,
-                         order, order_len, key, key_len TSRMLS_CC);
+    php_sp_cursor_create(getThis(), db, order, order_len, key TSRMLS_CC);
 }
 
 PHP_SOPHIA_METHOD(Cursor, rewind)
@@ -135,11 +181,37 @@ PHP_SOPHIA_METHOD(Cursor, rewind)
         sp_destroy(intern->sophia.cursor);
 
         if (intern->order.c) {
-            if (intern->key.c) {
-                sp_set(object, "key", intern->key.c, intern->key.len);
-            }
             if (sp_set(object, "order", intern->order.c) == -1) {
                 PHP_SP_ERR(E_WARNING, "Error iteration order set");
+            }
+        }
+
+        if (intern->key) {
+            zval **index;
+            uint str_key_len;
+            char *str_key;
+            ulong index_key;
+
+            for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(intern->key));
+                 zend_hash_get_current_data(Z_ARRVAL_P(intern->key),
+                                            (void *)&index) == SUCCESS;
+                 zend_hash_move_forward(Z_ARRVAL_P(intern->key))) {
+                if (zend_hash_get_current_key_ex(
+                        Z_ARRVAL_P(intern->key), &str_key, &str_key_len,
+                        &index_key, 0, NULL) == HASH_KEY_IS_STRING) {
+                    switch (Z_TYPE_PP(index)) {
+                        case IS_STRING:
+                            sp_set(object, str_key,
+                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            break;
+                        case IS_LONG:
+                            sp_set(object, str_key,
+                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            break;
+                        default:
+                            PHP_SP_ERR(E_WARNING, "Invalid key type");
+                    }
+                }
             }
         }
 
@@ -257,14 +329,77 @@ PHP_SOPHIA_METHOD(Cursor, key)
     }
 }
 
+PHP_SOPHIA_METHOD(Cursor, keys)
+{
+    php_sp_cursor_t *intern;
+    char *key = NULL;
+    int key_len = 0;
+
+    if (zend_parse_parameters_none() == FAILURE) {
+        RETURN_FALSE;
+    }
+
+    PHP_SP_CURSOR_OBJ(intern, getThis(), 1);
+
+    if (!intern->sophia.current) {
+        RETURN_FALSE;
+    }
+
+    key = sp_get(intern->sophia.current, "key", &key_len);
+
+    array_init(return_value);
+
+    zval* zv;
+    MAKE_STD_ZVAL(zv);
+    ZVAL_STRINGL(zv, key, key_len, 1);
+
+    zend_hash_add(Z_ARRVAL_P(return_value),
+                  "key", sizeof("key"), &zv, sizeof(zval*), NULL);
+
+    if (intern->key) {
+        zval **index;
+        uint str_key_len;
+        char *str_key;
+        ulong index_key;
+
+        for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(intern->key));
+             zend_hash_get_current_data(Z_ARRVAL_P(intern->key),
+                                        (void *)&index) == SUCCESS;
+             zend_hash_move_forward(Z_ARRVAL_P(intern->key))) {
+            if (zend_hash_get_current_key_ex(
+                    Z_ARRVAL_P(intern->key), &str_key, &str_key_len,
+                    &index_key, 0, NULL) == HASH_KEY_IS_STRING) {
+                switch (Z_TYPE_PP(index)) {
+                    case IS_STRING:
+                        key = sp_get(intern->sophia.current, str_key, &key_len);
+                        MAKE_STD_ZVAL(zv);
+                        ZVAL_STRINGL(zv, key, key_len, 1);
+                        zend_hash_add(Z_ARRVAL_P(return_value),
+                                      str_key, str_key_len,
+                                      &zv, sizeof(zval*), NULL);
+                        break;
+                    case IS_LONG: {
+                        uint32_t *n;
+                        n = sp_get(intern->sophia.current, str_key, &key_len);
+                        MAKE_STD_ZVAL(zv);
+                        ZVAL_LONG(zv, *n);
+                        zend_hash_add(Z_ARRVAL_P(return_value),
+                                      str_key, str_key_len,
+                                      &zv, sizeof(zval*), NULL);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 PHP_SOPHIA_API void
 php_sp_cursor_construct(zval *return_value, zval *db,
-                        char *order, int order_len,
-                        char *key, int key_len TSRMLS_DC)
+                        char *order, int order_len, zval *key TSRMLS_DC)
 {
     object_init_ex(return_value, php_sp_cursor_ce);
-    php_sp_cursor_create(return_value, db,
-                         order, order_len, key, key_len TSRMLS_CC);
+    php_sp_cursor_create(return_value, db, order, order_len, key TSRMLS_CC);
 }
 
 
@@ -281,6 +416,8 @@ static zend_function_entry php_sp_cursor_methods[] = {
                   arginfo_sp_cursor_no_parameters, ZEND_ACC_PUBLIC)
     PHP_SOPHIA_ME(Cursor, key,
                   arginfo_sp_cursor_no_parameters, ZEND_ACC_PUBLIC)
+    PHP_SOPHIA_ME(Cursor, keys,
+                  arginfo_sp_cursor_no_parameters, ZEND_ACC_PUBLIC)
     ZEND_FE_END
 };
 
@@ -294,7 +431,10 @@ php_sp_cursor_free_storage(void *object TSRMLS_DC)
     }
 
     smart_str_free(&intern->order);
-    smart_str_free(&intern->key);
+
+    if (intern->key) {
+        zval_ptr_dtor(&intern->key);
+    }
 
     if (intern->sophia.current) {
         sp_destroy(intern->sophia.current);

@@ -207,20 +207,60 @@ PHP_SOPHIA_METHOD(Db, __construct)
 PHP_SOPHIA_METHOD(Db, set)
 {
     php_sp_db_t *intern;
-    char *key = NULL, *value = NULL;
-    int key_len = 0, value_len = 0;
+    zval *key = NULL;
+    char *value = NULL;
+    int value_len = 0;
     void *object;
 
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss",
-                              &key, &key_len, &value, &value_len) == FAILURE) {
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zs",
+                              &key, &value, &value_len) == FAILURE) {
         RETURN_FALSE;
     }
 
     PHP_SP_DB_OBJ(intern, getThis(), 1);
 
     object = sp_object(intern->db);
-    sp_set(object, "key", key, key_len);
+
+    switch (Z_TYPE_P(key)) {
+        default:
+            convert_to_string(key);
+        case IS_STRING:
+            sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+            break;
+        case IS_ARRAY: {
+            zval **index;
+            uint str_key_len;
+            char *str_key;
+            ulong index_key;
+            uint32_t n;
+
+            for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(key));
+                 zend_hash_get_current_data(Z_ARRVAL_P(key),
+                                            (void *)&index) == SUCCESS;
+                 zend_hash_move_forward(Z_ARRVAL_P(key))) {
+                if (zend_hash_get_current_key_ex(Z_ARRVAL_P(key),
+                                                 &str_key, &str_key_len,
+                                                 &index_key, 0,
+                                                 NULL) == HASH_KEY_IS_STRING) {
+                    switch (Z_TYPE_PP(index)) {
+                        case IS_STRING:
+                            sp_set(object, str_key,
+                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            break;
+                        case IS_LONG:
+                            sp_set(object, str_key,
+                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            break;
+                        default:
+                            PHP_SP_ERR(E_WARNING, "Invalid key type");
+                    }
+                }
+            }
+            break;
+        }
+    }
+
     sp_set(object, "value", value, value_len);
 
     if (intern->transaction) {
@@ -241,19 +281,58 @@ PHP_SOPHIA_METHOD(Db, set)
 PHP_SOPHIA_METHOD(Db, get)
 {
     php_sp_db_t *intern;
-    char *key = NULL, *value = NULL;
-    int key_len = 0, value_len = 0;
+    zval *key = NULL;
+    char *value = NULL;
+    int value_len = 0;
     void *object, *result;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
-                              &key, &key_len) == FAILURE) {
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z",
+                              &key) == FAILURE) {
         RETURN_FALSE;
     }
 
     PHP_SP_DB_OBJ(intern, getThis(), 1);
 
     object = sp_object(intern->db);
-    sp_set(object, "key", key, key_len);
+
+    switch (Z_TYPE_P(key)) {
+        default:
+            convert_to_string(key);
+        case IS_STRING:
+            sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+            break;
+        case IS_ARRAY: {
+            zval **index;
+            uint str_key_len;
+            char *str_key;
+            ulong index_key;
+            uint32_t n;
+
+            for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(key));
+                 zend_hash_get_current_data(Z_ARRVAL_P(key),
+                                            (void *)&index) == SUCCESS;
+                 zend_hash_move_forward(Z_ARRVAL_P(key))) {
+                if (zend_hash_get_current_key_ex(Z_ARRVAL_P(key),
+                                                 &str_key, &str_key_len,
+                                                 &index_key, 0,
+                                                 NULL) == HASH_KEY_IS_STRING) {
+                    switch (Z_TYPE_PP(index)) {
+                        case IS_STRING:
+                            sp_set(object, str_key,
+                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            break;
+                        case IS_LONG:
+                            sp_set(object, str_key,
+                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            break;
+                        default:
+                            PHP_SP_ERR(E_WARNING, "Invalid key type");
+                    }
+                }
+            }
+            break;
+        }
+    }
 
     if (intern->transaction) {
         result = sp_get(intern->transaction, object);
@@ -279,19 +358,56 @@ PHP_SOPHIA_METHOD(Db, get)
 PHP_SOPHIA_METHOD(Db, delete)
 {
     php_sp_db_t *intern;
-    char *key = NULL;
-    int key_len = 0;
+    zval *key;
     void *object;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
-                              &key, &key_len) == FAILURE) {
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z",
+                              &key) == FAILURE) {
         RETURN_FALSE;
     }
 
     PHP_SP_DB_OBJ(intern, getThis(), 1);
 
     object = sp_object(intern->db);
-    sp_set(object, "key", key, key_len);
+
+    switch (Z_TYPE_P(key)) {
+        default:
+            convert_to_string(key);
+        case IS_STRING:
+            sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+            break;
+        case IS_ARRAY: {
+            zval **index;
+            uint str_key_len;
+            char *str_key;
+            ulong index_key;
+            uint32_t n;
+
+            for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(key));
+                 zend_hash_get_current_data(Z_ARRVAL_P(key),
+                                            (void *)&index) == SUCCESS;
+                 zend_hash_move_forward(Z_ARRVAL_P(key))) {
+                if (zend_hash_get_current_key_ex(Z_ARRVAL_P(key),
+                                                 &str_key, &str_key_len,
+                                                 &index_key, 0,
+                                                 NULL) == HASH_KEY_IS_STRING) {
+                    switch (Z_TYPE_PP(index)) {
+                        case IS_STRING:
+                            sp_set(object, str_key,
+                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            break;
+                        case IS_LONG:
+                            sp_set(object, str_key,
+                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            break;
+                        default:
+                            PHP_SP_ERR(E_WARNING, "Invalid key type");
+                    }
+                }
+            }
+            break;
+        }
+    }
 
     if (intern->transaction) {
         if (sp_delete(intern->transaction, object) == -1) {
@@ -427,19 +543,19 @@ PHP_SOPHIA_METHOD(Db, drop)
 PHP_SOPHIA_METHOD(Db, cursor)
 {
     php_sp_db_t *intern;
-    char *order = NULL, *key = NULL;
-    int order_len = 0, key_len = 0;
+    char *order = NULL;
+    int order_len = 0;
+    zval *key = NULL;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|ss",
-                              &order, &order_len,
-                              &key, &key_len) == FAILURE) {
+    if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|sz",
+                              &order, &order_len, &key) == FAILURE) {
         RETURN_FALSE;
     }
 
     PHP_SP_DB_OBJ(intern, getThis(), 1);
 
     php_sp_cursor_construct(return_value, getThis(),
-                            order, order_len, key, key_len TSRMLS_DC);
+                            order, order_len, key TSRMLS_DC);
 }
 
 PHP_SOPHIA_API void *

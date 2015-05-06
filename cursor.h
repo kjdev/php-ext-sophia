@@ -40,7 +40,7 @@ typedef struct {
     zend_object std;
     zval *db;
     smart_str order;
-    smart_str key;
+    zval *key;
     zend_bool first;
     php_sp_object_t sophia;
 } php_sp_cursor_t;
@@ -48,7 +48,7 @@ typedef struct {
 extern PHP_SOPHIA_API zend_class_entry *php_sp_cursor_ce;
 
 PHP_SOPHIA_API int php_sp_cursor_class_register(TSRMLS_D);
-PHP_SOPHIA_API void php_sp_cursor_construct(zval *return_value, zval *db, char *order, int order_len, char *key, int key_len TSRMLS_DC);
+PHP_SOPHIA_API void php_sp_cursor_construct(zval *return_value, zval *db, char *order, int order_len, zval *key TSRMLS_DC);
 
 #define PHP_SP_CURSOR_OBJ(self, obj, check) \
     do { \
