@@ -31,12 +31,13 @@
 
 #include "php_sophia.h"
 #include "db.h"
+#include "cursor.h"
 #include "exception.h"
 
 ZEND_DECLARE_MODULE_GLOBALS(sophia)
 
 ZEND_INI_BEGIN()
-    STD_ZEND_INI_ENTRY("sophia.path", (char *)PHP_SOPHIA_DEFAULT_PATH,
+    STD_ZEND_INI_ENTRY("sophia.path", PHP_SOPHIA_DEFAULT_PATH,
                        ZEND_INI_ALL, OnUpdateString, path,
                        zend_sophia_globals, sophia_globals)
 ZEND_INI_END()
@@ -71,6 +72,8 @@ ZEND_MINFO_FUNCTION(sophia)
     php_info_print_table_row(2, "Sophia support", "enabled");
     php_info_print_table_row(2, "Extension Version", PHP_SOPHIA_EXT_VERSION);
     php_info_print_table_end();
+
+    DISPLAY_INI_ENTRIES();
 }
 
 zend_module_entry sophia_module_entry = {

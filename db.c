@@ -29,6 +29,7 @@
 
 #include "php_sophia.h"
 #include "db.h"
+#include "cursor.h"
 #include "exception.h"
 
 zend_class_entry *php_sp_db_ce;
@@ -78,7 +79,11 @@ PHP_SOPHIA_METHOD(Db, __construct)
 {
     php_sp_db_t *intern;
     char *db, *db_name = NULL, *log_path = NULL, *sophia_path = NULL;
+#if ZEND_MODULE_API_NO >= 20141001
+    size_t db_len;
+#else
     int db_len;
+#endif
     zval *options = NULL;
     zend_bool log_path_free = 0;
 
@@ -92,10 +97,26 @@ PHP_SOPHIA_METHOD(Db, __construct)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 0);
+    intern = PHP_SP_DB_OBJ_NOCHECK(getThis());
+    if (!intern) {
+        PHP_SP_EXCEPTION(0, "Can not database object");
+        RETURN_FALSE;
+    }
 
     /* get path options */
     if (options) {
+#if ZEND_MODULE_API_NO >= 20141001
+        zval *path;
+        if ((path = zend_hash_str_find(Z_ARRVAL_P(options), "sophia.path",
+                                       sizeof("sophia.path")-1)) != NULL) {
+            sophia_path = Z_STRVAL_P(path);
+        }
+
+        if ((path = zend_hash_str_find(Z_ARRVAL_P(options), "log.path",
+                                       sizeof("log.path")-1)) != NULL) {
+            log_path = Z_STRVAL_P(path);
+        }
+#else
         zval **path;
         if (zend_hash_find(Z_ARRVAL_P(options),
                            "sophia.path", sizeof("sophia.path"),
@@ -108,6 +129,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
                            (void **)&path) != FAILURE && path) {
             log_path = Z_STRVAL_PP(path);
         }
+#endif
     }
 
     /* create sophia environment */
@@ -157,17 +179,32 @@ PHP_SOPHIA_METHOD(Db, __construct)
 
     /* set options */
     if (options) {
+#if ZEND_MODULE_API_NO >= 20141001
+        zend_string *key;
+        ulong index_key;
+        zval *value;
+        ZEND_HASH_FOREACH_KEY_VAL(Z_ARRVAL_P(options), index_key, key, value) {
+            if (key && strcmp(ZSTR_VAL(key), "sophia.path") != 0
+                && strcmp(ZSTR_VAL(key), "log.path") != 0) {
+                if (sp_set(intern->ctl, ZSTR_VAL(key),
+                           Z_STRVAL_P(value)) == -1) {
+                    PHP_SP_ERR(E_WARNING,
+                               "Error set option: %s", ZSTR_VAL(key));
+                }
+            }
+        } ZEND_HASH_FOREACH_END();
+#else
         zval **value;
         uint key_len;
         char *key;
-        ulong key_index;
+        ulong index_key;
 
         for (zend_hash_internal_pointer_reset(Z_ARRVAL_P(options));
              zend_hash_get_current_data(Z_ARRVAL_P(options),
                                         (void *)&value) == SUCCESS;
              zend_hash_move_forward(Z_ARRVAL_P(options))) {
             if (zend_hash_get_current_key_ex(Z_ARRVAL_P(options),
-                                             &key, &key_len, &key_index,
+                                             &key, &key_len, &index_key,
                                              0, NULL) == HASH_KEY_IS_STRING
                 && Z_TYPE_PP(value) == IS_STRING
                 && strcmp(key, "sophia.path") != 0
@@ -177,6 +214,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
                 }
             }
         }
+#endif
     }
 
     if (sp_open(intern->env) == -1) {
@@ -209,7 +247,11 @@ PHP_SOPHIA_METHOD(Db, set)
     php_sp_db_t *intern;
     zval *key = NULL;
     char *value = NULL;
+#if ZEND_MODULE_API_NO >= 20141001
+    size_t value_len = 0;
+#else
     int value_len = 0;
+#endif
     void *object;
 
 
@@ -218,7 +260,10 @@ PHP_SOPHIA_METHOD(Db, set)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     object = sp_object(intern->db);
 
@@ -229,6 +274,28 @@ PHP_SOPHIA_METHOD(Db, set)
             sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
+#if ZEND_MODULE_API_NO >= 20141001
+            zend_string *str_key;
+            ulong index_key;
+            zval *index;
+            ZEND_HASH_FOREACH_KEY_VAL(Z_ARRVAL_P(key),
+                                      index_key, str_key, index) {
+                if (key) {
+                    switch (Z_TYPE_P(index)) {
+                        case IS_STRING:
+                            sp_set(object, ZSTR_VAL(str_key),
+                                   Z_STRVAL_P(index), Z_STRLEN_P(index));
+                            break;
+                        case IS_LONG:
+                            sp_set(object, ZSTR_VAL(str_key),
+                                   &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                            break;
+                        default:
+                            PHP_SP_ERR(E_WARNING, "Invalid key type");
+                    }
+                }
+            } ZEND_HASH_FOREACH_END();
+#else
             zval **index;
             uint str_key_len;
             char *str_key;
@@ -257,6 +324,7 @@ PHP_SOPHIA_METHOD(Db, set)
                     }
                 }
             }
+#endif
             break;
         }
     }
@@ -280,7 +348,7 @@ PHP_SOPHIA_METHOD(Db, set)
 
 PHP_SOPHIA_METHOD(Db, get)
 {
-    php_sp_db_t *intern;
+    php_sp_db_t *intern = NULL;
     zval *key = NULL;
     char *value = NULL;
     int value_len = 0;
@@ -291,7 +359,10 @@ PHP_SOPHIA_METHOD(Db, get)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     object = sp_object(intern->db);
 
@@ -302,6 +373,28 @@ PHP_SOPHIA_METHOD(Db, get)
             sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
+#if ZEND_MODULE_API_NO >= 20141001
+            zend_string *str_key;
+            ulong index_key;
+            zval *index;
+            ZEND_HASH_FOREACH_KEY_VAL(Z_ARRVAL_P(key),
+                                      index_key, str_key, index) {
+                if (key) {
+                    switch (Z_TYPE_P(index)) {
+                        case IS_STRING:
+                            sp_set(object, ZSTR_VAL(str_key),
+                                   Z_STRVAL_P(index), Z_STRLEN_P(index));
+                            break;
+                        case IS_LONG:
+                            sp_set(object, ZSTR_VAL(str_key),
+                                   &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                            break;
+                        default:
+                            PHP_SP_ERR(E_WARNING, "Invalid key type");
+                    }
+                }
+            } ZEND_HASH_FOREACH_END();
+#else
             zval **index;
             uint str_key_len;
             char *str_key;
@@ -330,6 +423,7 @@ PHP_SOPHIA_METHOD(Db, get)
                     }
                 }
             }
+#endif
             break;
         }
     }
@@ -345,7 +439,11 @@ PHP_SOPHIA_METHOD(Db, get)
         if (value_len == 0) {
             RETVAL_EMPTY_STRING();
         } else if (value) {
+#if ZEND_MODULE_API_NO >= 20141001
+            RETVAL_STRINGL(value, value_len);
+#else
             RETVAL_STRINGL(value, value_len, 1);
+#endif
         } else {
             RETVAL_FALSE;
         }
@@ -366,7 +464,10 @@ PHP_SOPHIA_METHOD(Db, delete)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     object = sp_object(intern->db);
 
@@ -377,6 +478,28 @@ PHP_SOPHIA_METHOD(Db, delete)
             sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
+#if ZEND_MODULE_API_NO >= 20141001
+            zend_string *str_key;
+            ulong index_key;
+            zval *index;
+            ZEND_HASH_FOREACH_KEY_VAL(Z_ARRVAL_P(key),
+                                      index_key, str_key, index) {
+                if (key) {
+                    switch (Z_TYPE_P(index)) {
+                        case IS_STRING:
+                            sp_set(object, ZSTR_VAL(str_key),
+                                   Z_STRVAL_P(index), Z_STRLEN_P(index));
+                            break;
+                        case IS_LONG:
+                            sp_set(object, ZSTR_VAL(str_key),
+                                   &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                            break;
+                        default:
+                            PHP_SP_ERR(E_WARNING, "Invalid key type");
+                    }
+                }
+            } ZEND_HASH_FOREACH_END();
+#else
             zval **index;
             uint str_key_len;
             char *str_key;
@@ -405,6 +528,7 @@ PHP_SOPHIA_METHOD(Db, delete)
                     }
                 }
             }
+#endif
             break;
         }
     }
@@ -430,7 +554,10 @@ PHP_SOPHIA_METHOD(Db, begin)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     if (intern->transaction) {
         PHP_SP_ERR(E_WARNING, "Already transaction");
@@ -454,7 +581,10 @@ PHP_SOPHIA_METHOD(Db, commit)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     if (!intern->transaction) {
         PHP_SP_ERR(E_WARNING, "Can not start transaction");
@@ -479,7 +609,10 @@ PHP_SOPHIA_METHOD(Db, rollback)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     if (!intern->transaction) {
         PHP_SP_ERR(E_WARNING, "Can not start transaction");
@@ -504,7 +637,10 @@ PHP_SOPHIA_METHOD(Db, close)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     if (intern->env) {
         if (sp_destroy(intern->env) == -1) {
@@ -529,7 +665,10 @@ PHP_SOPHIA_METHOD(Db, drop)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     if (sp_drop(intern->db) == -1) {
         RETURN_FALSE;
@@ -544,7 +683,11 @@ PHP_SOPHIA_METHOD(Db, cursor)
 {
     php_sp_db_t *intern;
     char *order = NULL;
+#if ZEND_MODULE_API_NO >= 20141001
+    size_t order_len = 0;
+#else
     int order_len = 0;
+#endif
     zval *key = NULL;
 
     if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|sz",
@@ -552,10 +695,13 @@ PHP_SOPHIA_METHOD(Db, cursor)
         RETURN_FALSE;
     }
 
-    PHP_SP_DB_OBJ(intern, getThis(), 1);
+    intern = PHP_SP_DB_OBJ(getThis());
+    if (!intern) {
+        RETURN_FALSE;
+    }
 
     php_sp_cursor_construct(return_value, getThis(),
-                            order, order_len, key TSRMLS_DC);
+                            order, order_len, key TSRMLS_CC);
 }
 
 PHP_SOPHIA_API void *
@@ -563,9 +709,13 @@ php_sp_db_object_get_database(zval *db TSRMLS_DC)
 {
     php_sp_db_t *intern;
 
-    PHP_SP_DB_OBJ(intern, db, 0);
+    if (!db) {
+        return NULL;
+    }
 
-    if (intern->db) {
+    intern = PHP_SP_DB_OBJ_NOCHECK(db);
+
+    if (intern && intern->db) {
         return intern->db;
     } else {
         return NULL;
@@ -588,6 +738,52 @@ static zend_function_entry php_sp_db_methods[] = {
     ZEND_FE_END
 };
 
+#if ZEND_MODULE_API_NO >= 20141001
+static void
+php_sp_db_free_storage(zend_object *object TSRMLS_DC)
+{
+    php_sp_db_t *intern;
+
+    intern = (php_sp_db_t *)((char *)object - XtOffsetOf(php_sp_db_t, std));
+    if (!intern) {
+        return;
+    }
+
+    if (intern->env) {
+        sp_destroy(intern->env);
+    }
+
+    zend_object_std_dtor(&intern->std TSRMLS_CC);
+    efree(object);
+}
+
+static zend_object *
+php_sp_db_new_ex(zend_class_entry *ce, php_sp_db_t **ptr TSRMLS_DC)
+{
+    php_sp_db_t *intern;
+
+    intern = ecalloc(1, sizeof(php_sp_db_t) + zend_object_properties_size(ce));
+    if (ptr) {
+        *ptr = intern;
+    }
+
+    zend_object_std_init(&intern->std, ce TSRMLS_CC);
+    object_properties_init(&intern->std, ce);
+
+    php_sp_db_handlers.offset = XtOffsetOf(php_sp_db_t, std);
+    php_sp_db_handlers.free_obj = php_sp_db_free_storage;
+
+    intern->std.handlers = &php_sp_db_handlers;
+
+    return &intern->std;
+}
+
+static zend_object *
+php_sp_db_new(zend_class_entry *ce TSRMLS_DC)
+{
+    return php_sp_db_new_ex(ce, NULL TSRMLS_CC);
+}
+#else
 static void
 php_sp_db_free_storage(void *object TSRMLS_DC)
 {
@@ -642,6 +838,7 @@ php_sp_db_new(zend_class_entry *ce TSRMLS_DC)
 {
     return php_sp_db_new_ex(ce, NULL TSRMLS_CC);
 }
+#endif
 
 PHP_SOPHIA_API int
 php_sp_db_class_register(TSRMLS_D)

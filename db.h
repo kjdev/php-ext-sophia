@@ -29,11 +29,16 @@
 #include "exception.h"
 
 typedef struct {
+#if ZEND_MODULE_API_NO < 20141001
     zend_object std;
+#endif
     void *env;
     void *ctl;
     void *db;
     void *transaction;
+#if ZEND_MODULE_API_NO >= 20141001
+    zend_object std;
+#endif
 } php_sp_db_t;
 
 extern PHP_SOPHIA_API zend_class_entry *php_sp_db_ce;
@@ -41,13 +46,23 @@ extern PHP_SOPHIA_API zend_class_entry *php_sp_db_ce;
 PHP_SOPHIA_API int php_sp_db_class_register(TSRMLS_D);
 PHP_SOPHIA_API void * php_sp_db_object_get_database(zval *db TSRMLS_DC);
 
-#define PHP_SP_DB_OBJ(self, obj, check) \
-    do { \
-        self = (php_sp_db_t *)zend_object_store_get_object(obj TSRMLS_CC); \
-        if ((check) && !(self)->db) { \
-            PHP_SP_EXCEPTION(0, "Can not operate on closed database"); \
-            return; \
-        } \
-    } while(0)
+static inline php_sp_db_t * php_sp_db_object_fetch(zval *zv, int check)
+{
+    php_sp_db_t *self;
+#if ZEND_MODULE_API_NO >= 20141001
+    self = (php_sp_db_t *)((char *)Z_OBJ_P(zv) - XtOffsetOf(php_sp_db_t, std));
+#else
+    TSRMLS_FETCH();
+    self = (php_sp_db_t *)zend_object_store_get_object(zv TSRMLS_CC);
+#endif
+    if ((check) && (!(self) || !(self)->db)) {
+        PHP_SP_EXCEPTION(0, "Can not operate on closed database");
+        return NULL;
+    }
+    return self;
+}
+
+#define PHP_SP_DB_OBJ_NOCHECK(zv) php_sp_db_object_fetch(zv, 0)
+#define PHP_SP_DB_OBJ(zv) php_sp_db_object_fetch(zv, 1)
 
 #endif

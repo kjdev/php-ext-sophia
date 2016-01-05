@@ -23,11 +23,16 @@
 #ifndef PHP_SOPHIA_CURSOR_H
 #define PHP_SOPHIA_CURSOR_H
 
+#if ZEND_MODULE_API_NO >= 20141001
+#include <ext/standard/php_smart_string.h>
+#else
 #include <ext/standard/php_smart_str.h>
+#endif
 
 #include "sophia.h"
 
 #include "php_sophia.h"
+#include "db.h"
 #include "exception.h"
 
 typedef struct {
@@ -37,12 +42,23 @@ typedef struct {
 } php_sp_object_t;
 
 typedef struct {
+#if ZEND_MODULE_API_NO < 20141001
     zend_object std;
+#endif
+#if ZEND_MODULE_API_NO >= 20141001
+    zval db;
+    smart_string order;
+    zval key;
+#else
     zval *db;
     smart_str order;
     zval *key;
+#endif
     zend_bool first;
     php_sp_object_t sophia;
+#if ZEND_MODULE_API_NO >= 20141001
+    zend_object std;
+#endif
 } php_sp_cursor_t;
 
 extern PHP_SOPHIA_API zend_class_entry *php_sp_cursor_ce;
@@ -50,13 +66,26 @@ extern PHP_SOPHIA_API zend_class_entry *php_sp_cursor_ce;
 PHP_SOPHIA_API int php_sp_cursor_class_register(TSRMLS_D);
 PHP_SOPHIA_API void php_sp_cursor_construct(zval *return_value, zval *db, char *order, int order_len, zval *key TSRMLS_DC);
 
-#define PHP_SP_CURSOR_OBJ(self, obj, check) \
-    do { \
-        self = (php_sp_cursor_t *)zend_object_store_get_object(obj TSRMLS_CC); \
-        if ((check) && !(php_sp_db_object_get_database((self)->db TSRMLS_CC) && (self)->sophia.cursor)) { \
-            PHP_SP_EXCEPTION(0, "Can not iterate on closed database"); \
-            return; \
-        } \
-    } while(0)
+
+static inline php_sp_cursor_t * php_sp_cursor_object_fetch(zval *zv, int check)
+{
+    php_sp_cursor_t *self;
+#if ZEND_MODULE_API_NO >= 20141001
+    self = (php_sp_cursor_t *)((char *)Z_OBJ_P(zv) - XtOffsetOf(php_sp_cursor_t, std));
+    if ((check) && (!(self) || !php_sp_db_object_get_database(&(self)->db TSRMLS_CC)))
+#else
+    TSRMLS_FETCH();
+    self = (php_sp_cursor_t *)zend_object_store_get_object(zv TSRMLS_CC);
+    if ((check) && (!(self) || !php_sp_db_object_get_database((self)->db TSRMLS_CC)))
+#endif
+    {
+        PHP_SP_EXCEPTION(0, "Can not iterate on closed database");
+        return NULL;
+    }
+    return self;
+}
+
+#define PHP_SP_CURSOR_OBJ_NOCHECK(zv) php_sp_cursor_object_fetch(zv, 0)
+#define PHP_SP_CURSOR_OBJ(zv) php_sp_cursor_object_fetch(zv, 1)
 
 #endif
