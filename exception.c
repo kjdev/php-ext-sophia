@@ -40,7 +40,7 @@ php_sp_exception_class_register(TSRMLS_D)
 
     INIT_CLASS_ENTRY(ce, ZEND_NS_NAME(PHP_SOPHIA_NS, "Exception"), NULL);
 
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     php_sp_exception_ce = zend_register_internal_class_ex(
         &ce, zend_exception_get_default(TSRMLS_C));
 #else

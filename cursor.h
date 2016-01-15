@@ -23,7 +23,7 @@
 #ifndef PHP_SOPHIA_CURSOR_H
 #define PHP_SOPHIA_CURSOR_H
 
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
 #include <ext/standard/php_smart_string.h>
 #else
 #include <ext/standard/php_smart_str.h>
@@ -42,10 +42,10 @@ typedef struct {
 } php_sp_object_t;
 
 typedef struct {
-#if ZEND_MODULE_API_NO < 20141001
+#ifndef ZEND_ENGINE_3
     zend_object std;
 #endif
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     zval db;
     smart_string order;
     zval key;
@@ -56,7 +56,7 @@ typedef struct {
 #endif
     zend_bool first;
     php_sp_object_t sophia;
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     zend_object std;
 #endif
 } php_sp_cursor_t;
@@ -70,7 +70,7 @@ PHP_SOPHIA_API void php_sp_cursor_construct(zval *return_value, zval *db, char *
 static inline php_sp_cursor_t * php_sp_cursor_object_fetch(zval *zv, int check)
 {
     php_sp_cursor_t *self;
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     self = (php_sp_cursor_t *)((char *)Z_OBJ_P(zv) - XtOffsetOf(php_sp_cursor_t, std));
     if ((check) && (!(self) || !php_sp_db_object_get_database(&(self)->db TSRMLS_CC)))
 #else

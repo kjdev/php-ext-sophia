@@ -79,7 +79,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
 {
     php_sp_db_t *intern;
     char *db, *db_name = NULL, *log_path = NULL, *sophia_path = NULL;
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     size_t db_len;
 #else
     int db_len;
@@ -105,7 +105,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
 
     /* get path options */
     if (options) {
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
         zval *path;
         if ((path = zend_hash_str_find(Z_ARRVAL_P(options), "sophia.path",
                                        sizeof("sophia.path")-1)) != NULL) {
@@ -179,7 +179,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
 
     /* set options */
     if (options) {
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
         zend_string *key;
         ulong index_key;
         zval *value;
@@ -247,7 +247,7 @@ PHP_SOPHIA_METHOD(Db, set)
     php_sp_db_t *intern;
     zval *key = NULL;
     char *value = NULL;
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     size_t value_len = 0;
 #else
     int value_len = 0;
@@ -274,7 +274,7 @@ PHP_SOPHIA_METHOD(Db, set)
             sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
             zend_string *str_key;
             ulong index_key;
             zval *index;
@@ -373,7 +373,7 @@ PHP_SOPHIA_METHOD(Db, get)
             sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
             zend_string *str_key;
             ulong index_key;
             zval *index;
@@ -439,7 +439,7 @@ PHP_SOPHIA_METHOD(Db, get)
         if (value_len == 0) {
             RETVAL_EMPTY_STRING();
         } else if (value) {
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
             RETVAL_STRINGL(value, value_len);
 #else
             RETVAL_STRINGL(value, value_len, 1);
@@ -478,7 +478,7 @@ PHP_SOPHIA_METHOD(Db, delete)
             sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
             zend_string *str_key;
             ulong index_key;
             zval *index;
@@ -683,7 +683,7 @@ PHP_SOPHIA_METHOD(Db, cursor)
 {
     php_sp_db_t *intern;
     char *order = NULL;
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     size_t order_len = 0;
 #else
     int order_len = 0;
@@ -738,13 +738,13 @@ static zend_function_entry php_sp_db_methods[] = {
     ZEND_FE_END
 };
 
-#if ZEND_MODULE_API_NO >= 20141001
-static void
-php_sp_db_free_storage(zend_object *object TSRMLS_DC)
+#ifdef ZEND_ENGINE_3
+static inline void
+php_sp_db_free_storage(zend_object *std)
 {
     php_sp_db_t *intern;
 
-    intern = (php_sp_db_t *)((char *)object - XtOffsetOf(php_sp_db_t, std));
+    intern = (php_sp_db_t *)((char *)std - XtOffsetOf(php_sp_db_t, std));
     if (!intern) {
         return;
     }
@@ -753,11 +753,10 @@ php_sp_db_free_storage(zend_object *object TSRMLS_DC)
         sp_destroy(intern->env);
     }
 
-    zend_object_std_dtor(&intern->std TSRMLS_CC);
-    efree(object);
+    zend_object_std_dtor(std);
 }
 
-static zend_object *
+static inline zend_object *
 php_sp_db_new_ex(zend_class_entry *ce, php_sp_db_t **ptr TSRMLS_DC)
 {
     php_sp_db_t *intern;
@@ -767,24 +766,22 @@ php_sp_db_new_ex(zend_class_entry *ce, php_sp_db_t **ptr TSRMLS_DC)
         *ptr = intern;
     }
 
-    zend_object_std_init(&intern->std, ce TSRMLS_CC);
+    zend_object_std_init(&intern->std, ce);
     object_properties_init(&intern->std, ce);
-
-    php_sp_db_handlers.offset = XtOffsetOf(php_sp_db_t, std);
-    php_sp_db_handlers.free_obj = php_sp_db_free_storage;
+    rebuild_object_properties(&intern->std);
 
     intern->std.handlers = &php_sp_db_handlers;
 
     return &intern->std;
 }
 
-static zend_object *
+static inline zend_object *
 php_sp_db_new(zend_class_entry *ce TSRMLS_DC)
 {
     return php_sp_db_new_ex(ce, NULL TSRMLS_CC);
 }
 #else
-static void
+static inline void
 php_sp_db_free_storage(void *object TSRMLS_DC)
 {
     php_sp_db_t *intern = (php_sp_db_t *)object;
@@ -801,7 +798,7 @@ php_sp_db_free_storage(void *object TSRMLS_DC)
     efree(object);
 }
 
-static zend_object_value
+static inline zend_object_value
 php_sp_db_new_ex(zend_class_entry *ce, php_sp_db_t **ptr TSRMLS_DC)
 {
     php_sp_db_t *intern;
@@ -821,7 +818,8 @@ php_sp_db_new_ex(zend_class_entry *ce, php_sp_db_t **ptr TSRMLS_DC)
     object_properties_init(&intern->std, ce);
 #else
     zend_hash_copy(intern->std.properties, &ce->default_properties,
-                   (copy_ctor_func_t)zval_add_ref, (void *)&tmp, sizeof(zval *));
+                   (copy_ctor_func_t)zval_add_ref, (void *)&tmp,
+                   sizeof(zval *));
 #endif
 
     retval.handle = zend_objects_store_put(
@@ -847,16 +845,16 @@ php_sp_db_class_register(TSRMLS_D)
 
     INIT_CLASS_ENTRY(ce, ZEND_NS_NAME(PHP_SOPHIA_NS, "Db"), php_sp_db_methods);
 
-    ce.create_object = php_sp_db_new;
-
     php_sp_db_ce = zend_register_internal_class(&ce TSRMLS_CC);
-    if (php_sp_db_ce == NULL) {
-        return FAILURE;
-    }
+    php_sp_db_ce->create_object = php_sp_db_new;
 
-    memcpy(&php_sp_db_handlers, zend_get_std_object_handlers(),
+    memcpy(&php_sp_db_handlers, &std_object_handlers,
            sizeof(zend_object_handlers));
-
+#ifdef ZEND_ENGINE_3
+    php_sp_db_handlers.offset = XtOffsetOf(php_sp_db_t, std);
+    php_sp_db_handlers.dtor_obj = zend_objects_destroy_object;
+    php_sp_db_handlers.free_obj = php_sp_db_free_storage;
+#endif
     php_sp_db_handlers.clone_obj = NULL;
 
     return SUCCESS;

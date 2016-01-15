@@ -29,14 +29,14 @@
 #include "exception.h"
 
 typedef struct {
-#if ZEND_MODULE_API_NO < 20141001
+#ifndef ZEND_ENGINE_3
     zend_object std;
 #endif
     void *env;
     void *ctl;
     void *db;
     void *transaction;
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     zend_object std;
 #endif
 } php_sp_db_t;
@@ -49,7 +49,7 @@ PHP_SOPHIA_API void * php_sp_db_object_get_database(zval *db TSRMLS_DC);
 static inline php_sp_db_t * php_sp_db_object_fetch(zval *zv, int check)
 {
     php_sp_db_t *self;
-#if ZEND_MODULE_API_NO >= 20141001
+#ifdef ZEND_ENGINE_3
     self = (php_sp_db_t *)((char *)Z_OBJ_P(zv) - XtOffsetOf(php_sp_db_t, std));
 #else
     TSRMLS_FETCH();
