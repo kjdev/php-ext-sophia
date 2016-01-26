@@ -77,16 +77,23 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
 #endif
     }
 
-    intern->sophia.db = php_sp_db_object_get_database(db TSRMLS_CC);
+    intern->sophia.env = php_sp_db_object_get_env(db TSRMLS_CC);
+    if (!intern->sophia.env) {
+        PHP_SP_EXCEPTION(0, "Can not database environment");
+        return;
+    }
+
+    intern->sophia.db = php_sp_db_object_get_object(db TSRMLS_CC);
     if (!intern->sophia.db) {
         PHP_SP_EXCEPTION(0, "Can not database object");
         return;
     }
 
-    object = sp_object(intern->sophia.db);
+    object = sp_document(intern->sophia.db);
 
     if (intern->order.c) {
-        if (sp_set(object, "order", intern->order.c) == -1) {
+        if (sp_setstring(object, "order",
+                         intern->order.c, intern->order.len) == -1) {
 #ifdef ZEND_ENGINE_3
             smart_string_free(&intern->order);
 #else
@@ -108,7 +115,7 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
             default:
                 convert_to_string(key);
             case IS_STRING:
-                sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+                sp_setstring(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
 #ifdef ZEND_ENGINE_3
                 zend_hash_str_add(Z_ARRVAL(intern->key),
                                   "key", sizeof("key")-1, key);
@@ -129,18 +136,17 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
                                           index_key, str_key, index) {
                     switch (Z_TYPE_P(index)) {
                         case IS_STRING:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   Z_STRVAL_P(index), Z_STRLEN_P(index));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         Z_STRVAL_P(index), Z_STRLEN_P(index));
                             zend_hash_add(Z_ARRVAL(intern->key),
-                                          str_key, index);
-                            zval_add_ref(index);
+                                              str_key, index);
                             break;
                         case IS_LONG:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         &Z_LVAL_P(index),
+                                         sizeof(Z_LVAL_P(index)));
                             zend_hash_add(Z_ARRVAL(intern->key),
                                           str_key, index);
-                            zval_add_ref(index);
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -162,17 +168,18 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
                             &index_key, 0, NULL) == HASH_KEY_IS_STRING) {
                         switch (Z_TYPE_PP(index)) {
                             case IS_STRING:
-                                sp_set(object, str_key,
-                                       Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                                sp_setstring(object, str_key,
+                                             Z_STRVAL_PP(index),
+                                             Z_STRLEN_PP(index));
                                 zend_hash_add(Z_ARRVAL_P(intern->key),
                                               str_key, str_key_len,
                                               index, sizeof(zval*), NULL);
                                 zval_add_ref(index);
                                 break;
                             case IS_LONG:
-                                sp_set(object, str_key,
-                                       &Z_LVAL_PP(index),
-                                       sizeof(Z_LVAL_PP(index)));
+                                sp_setstring(object, str_key,
+                                             &Z_LVAL_PP(index),
+                                             sizeof(Z_LVAL_PP(index)));
                                 zend_hash_add(Z_ARRVAL_P(intern->key),
                                               str_key, str_key_len,
                                               index, sizeof(zval*), NULL);
@@ -189,13 +196,13 @@ php_sp_cursor_create(zval *obj, zval *db, char *order, int order_len,
         }
     }
 
-    intern->sophia.cursor = sp_cursor(intern->sophia.db, object);
+    intern->sophia.cursor = sp_cursor(intern->sophia.env);
     if (!intern->sophia.cursor) {
         PHP_SP_EXCEPTION(0, "Can not open cursor");
         return;
     }
 
-    intern->first = 1;
+    intern->sophia.current = sp_get(intern->sophia.cursor, object);
 }
 
 PHP_SOPHIA_METHOD(Cursor, __construct)
@@ -242,12 +249,13 @@ PHP_SOPHIA_METHOD(Cursor, rewind)
         intern->sophia.current = NULL;
     }
 
-    object = sp_object(intern->sophia.db);
+    object = sp_document(intern->sophia.db);
 
-    if (!intern->first && intern->sophia.cursor) {
+    if (intern->sophia.cursor) {
         sp_destroy(intern->sophia.cursor);
         if (intern->order.c) {
-            if (sp_set(object, "order", intern->order.c) == -1) {
+            if (sp_setstring(object, "order",
+                             intern->order.c, intern->order.len) == -1) {
                 PHP_SP_ERR(E_WARNING, "Error iteration order set");
             }
         }
@@ -266,12 +274,12 @@ PHP_SOPHIA_METHOD(Cursor, rewind)
                                       index_key, str_key, index) {
                 switch (Z_TYPE_P(index)) {
                     case IS_STRING:
-                        sp_set(object, ZSTR_VAL(str_key),
-                               Z_STRVAL_P(index), Z_STRLEN_P(index));
+                        sp_setstring(object, ZSTR_VAL(str_key),
+                                     Z_STRVAL_P(index), Z_STRLEN_P(index));
                         break;
                     case IS_LONG:
-                        sp_set(object, ZSTR_VAL(str_key),
-                               &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                        sp_setstring(object, ZSTR_VAL(str_key),
+                                     &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
                         break;
                     default:
                         PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -292,12 +300,14 @@ PHP_SOPHIA_METHOD(Cursor, rewind)
                         &index_key, 0, NULL) == HASH_KEY_IS_STRING) {
                     switch (Z_TYPE_PP(index)) {
                         case IS_STRING:
-                            sp_set(object, str_key,
-                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            sp_setstring(object, str_key,
+                                         Z_STRVAL_PP(index),
+                                         Z_STRLEN_PP(index));
                             break;
                         case IS_LONG:
-                            sp_set(object, str_key,
-                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            sp_setstring(object, str_key,
+                                         &Z_LVAL_PP(index),
+                                         sizeof(Z_LVAL_PP(index)));
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -307,7 +317,7 @@ PHP_SOPHIA_METHOD(Cursor, rewind)
 #endif
         }
 
-        intern->sophia.cursor = sp_cursor(intern->sophia.db, object);
+        intern->sophia.cursor = sp_cursor(intern->sophia.env);
         if (!intern->sophia.cursor) {
             PHP_SP_EXCEPTION(0, "Can not open cursor");
             RETURN_FALSE;
@@ -315,11 +325,10 @@ PHP_SOPHIA_METHOD(Cursor, rewind)
     }
 
     intern->sophia.current = sp_get(intern->sophia.cursor, object);
+
     if (!intern->sophia.current) {
         RETURN_FALSE;
     }
-
-    intern->first = 0;
 
     RETURN_TRUE;
 }
@@ -327,7 +336,6 @@ PHP_SOPHIA_METHOD(Cursor, rewind)
 PHP_SOPHIA_METHOD(Cursor, next)
 {
     php_sp_cursor_t *intern;
-    void *object;
 
     if (zend_parse_parameters_none() == FAILURE) {
         RETURN_FALSE;
@@ -338,13 +346,12 @@ PHP_SOPHIA_METHOD(Cursor, next)
         RETURN_FALSE;
     }
 
-    if (intern->sophia.current) {
-        sp_destroy(intern->sophia.current);
-        intern->sophia.current = NULL;
+    if (!intern->sophia.current) {
+        RETURN_FALSE;
     }
 
-    object = sp_object(intern->sophia.db);
-    intern->sophia.current = sp_get(intern->sophia.cursor, object);
+    intern->sophia.current = sp_get(intern->sophia.cursor,
+                                    intern->sophia.current);
 }
 
 PHP_SOPHIA_METHOD(Cursor, valid)
@@ -385,14 +392,10 @@ PHP_SOPHIA_METHOD(Cursor, current)
     }
 
     if (!intern->sophia.current) {
-        object = sp_object(intern->sophia.db);
-        intern->sophia.current = sp_get(intern->sophia.cursor, object);
-        if (!intern->sophia.current) {
-            RETURN_FALSE;
-        }
+        RETURN_FALSE;
     }
 
-    value = sp_get(intern->sophia.current, "value", &value_len);
+    value = sp_getstring(intern->sophia.current, "value", &value_len);
 
     if (value_len == 0) {
         RETURN_EMPTY_STRING();
@@ -426,7 +429,7 @@ PHP_SOPHIA_METHOD(Cursor, key)
         RETURN_FALSE;
     }
 
-    key = sp_get(intern->sophia.current, "key", &key_len);
+    key = sp_getstring(intern->sophia.current, "key", &key_len);
 
     if (key_len == 0) {
         RETURN_EMPTY_STRING();
@@ -450,7 +453,7 @@ PHP_SOPHIA_METHOD(Cursor, keys)
     zval zv;
     zend_long cnt;
 #else
-    zval* zv;
+    zval *zv;
     long cnt;
 #endif
 
@@ -467,7 +470,7 @@ PHP_SOPHIA_METHOD(Cursor, keys)
         RETURN_FALSE;
     }
 
-    key = sp_get(intern->sophia.current, "key", &key_len);
+    key = sp_getstring(intern->sophia.current, "key", &key_len);
 
     array_init(return_value);
 
@@ -495,16 +498,17 @@ PHP_SOPHIA_METHOD(Cursor, keys)
                                   index_key, str_key, index) {
             switch (Z_TYPE_P(index)) {
                 case IS_STRING:
-                    key = sp_get(intern->sophia.current,
-                                 ZSTR_VAL(str_key), &key_len);
+                    key = sp_getstring(intern->sophia.current,
+                                       ZSTR_VAL(str_key), &key_len);
                     ZVAL_STRINGL(&zv, key, key_len);
                     zend_hash_add(Z_ARRVAL_P(return_value), str_key, &zv);
+                    zval_ptr_dtor(&zv);
                     break;
                 case IS_LONG: {
-                    uint32_t *n;
-                    n = sp_get(intern->sophia.current,
-                               ZSTR_VAL(str_key), &key_len);
-                    ZVAL_LONG(&zv, *n);
+                    long n;
+                    n = *(long *)sp_getstring(intern->sophia.current,
+                                              ZSTR_VAL(str_key), NULL);
+                    ZVAL_LONG(&zv, n);
                     zend_hash_add(Z_ARRVAL_P(return_value), str_key, &zv);
                     break;
                 }
@@ -525,18 +529,21 @@ PHP_SOPHIA_METHOD(Cursor, keys)
                     &index_key, 0, NULL) == HASH_KEY_IS_STRING) {
                 switch (Z_TYPE_PP(index)) {
                     case IS_STRING:
-                        key = sp_get(intern->sophia.current, str_key, &key_len);
+                        key = sp_getstring(intern->sophia.current,
+                                           str_key, &key_len);
                         MAKE_STD_ZVAL(zv);
                         ZVAL_STRINGL(zv, key, key_len, 1);
                         zend_hash_add(Z_ARRVAL_P(return_value),
                                       str_key, str_key_len,
                                       &zv, sizeof(zval*), NULL);
+                        zval_ptr_dtor(&zv);
                         break;
                     case IS_LONG: {
-                        uint32_t *n;
-                        n = sp_get(intern->sophia.current, str_key, &key_len);
+                        long n;
+                        n = *(long *)sp_getstring(intern->sophia.current,
+                                                  str_key, NULL);
                         MAKE_STD_ZVAL(zv);
-                        ZVAL_LONG(zv, *n);
+                        ZVAL_LONG(zv, n);
                         zend_hash_add(Z_ARRVAL_P(return_value),
                                       str_key, str_key_len,
                                       &zv, sizeof(zval*), NULL);
@@ -591,13 +598,14 @@ php_sp_cursor_free_storage(zend_object *std)
     smart_string_free(&intern->order);
     zval_ptr_dtor(&intern->key);
 
-    if (intern->sophia.current) {
-        sp_destroy(intern->sophia.current);
-    }
+    if (php_sp_db_object_get_object(&intern->db TSRMLS_CC)) {
+        if (intern->sophia.current) {
+            sp_destroy(intern->sophia.current);
+        }
 
-    if (intern->sophia.cursor &&
-        php_sp_db_object_get_database(&intern->db TSRMLS_CC)) {
-        sp_destroy(intern->sophia.cursor);
+        if (intern->sophia.cursor) {
+            sp_destroy(intern->sophia.cursor);
+        }
     }
 
     zval_ptr_dtor(&intern->db);
@@ -643,13 +651,14 @@ php_sp_cursor_free_storage(void *object TSRMLS_DC)
     smart_str_free(&intern->order);
     zval_ptr_dtor(&intern->key);
 
-    if (intern->sophia.current) {
-        sp_destroy(intern->sophia.current);
-    }
+    if (php_sp_db_object_get_object(intern->db TSRMLS_CC)) {
+        if (intern->sophia.current) {
+            sp_destroy(intern->sophia.current);
+        }
 
-    if (intern->sophia.cursor &&
-        php_sp_db_object_get_database(intern->db TSRMLS_CC)) {
-        sp_destroy(intern->sophia.cursor);
+        if (intern->sophia.cursor) {
+            sp_destroy(intern->sophia.cursor);
+        }
     }
 
     if (intern->db) {

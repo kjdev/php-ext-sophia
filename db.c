@@ -134,7 +134,6 @@ PHP_SOPHIA_METHOD(Db, __construct)
 
     /* create sophia environment */
     intern->env = sp_env();
-    intern->ctl = sp_ctl(intern->env);
 
     if (!sophia_path || strlen(sophia_path) == 0) {
         sophia_path = PHP_SOPHIA_G(path);
@@ -147,7 +146,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
         RETURN_FALSE;
     }
 
-    sp_set(intern->ctl, "sophia.path", sophia_path);
+    sp_setstring(intern->env, "sophia.path", sophia_path, 0);
 
     if (!log_path) {
         log_path = (char *)emalloc(strlen(sophia_path) + db_len + 6);
@@ -162,7 +161,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
     if (php_check_open_basedir(log_path TSRMLS_CC) ) {
         RETURN_FALSE;
     }
-    sp_set(intern->ctl, "log.path", log_path);
+    sp_setstring(intern->env, "log.path", log_path, 0);
 
     /* create/open database */
     db_name = (char *)emalloc(db_len + 4);
@@ -175,7 +174,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
     }
     php_sprintf(db_name, "db.%.*s", db_len, db);
 
-    sp_set(intern->ctl, "db", db);
+    sp_setstring(intern->env, "db", db, 0);
 
     /* set options */
     if (options) {
@@ -186,8 +185,8 @@ PHP_SOPHIA_METHOD(Db, __construct)
         ZEND_HASH_FOREACH_KEY_VAL(Z_ARRVAL_P(options), index_key, key, value) {
             if (key && strcmp(ZSTR_VAL(key), "sophia.path") != 0
                 && strcmp(ZSTR_VAL(key), "log.path") != 0) {
-                if (sp_set(intern->ctl, ZSTR_VAL(key),
-                           Z_STRVAL_P(value)) == -1) {
+                if (sp_setstring(intern->env, ZSTR_VAL(key),
+                                 Z_STRVAL_P(value), Z_STRLEN_P(value)) == -1) {
                     PHP_SP_ERR(E_WARNING,
                                "Error set option: %s", ZSTR_VAL(key));
                 }
@@ -209,7 +208,9 @@ PHP_SOPHIA_METHOD(Db, __construct)
                 && Z_TYPE_PP(value) == IS_STRING
                 && strcmp(key, "sophia.path") != 0
                 && strcmp(key, "log.path") != 0) {
-                if (sp_set(intern->ctl, key, Z_STRVAL_PP(value)) == -1) {
+                if (sp_setstring(intern->env, key,
+                                 Z_STRVAL_PP(value),
+                                 Z_STRLEN_PP(value)) == -1) {
                     PHP_SP_ERR(E_WARNING, "Error set option: %s", key);
                 }
             }
@@ -226,7 +227,7 @@ PHP_SOPHIA_METHOD(Db, __construct)
         RETURN_FALSE;
     }
 
-    intern->db = sp_get(intern->ctl, db_name);
+    intern->db = sp_getobject(intern->env, db_name);
     if (!intern->db) {
         efree(db_name);
         if (log_path && log_path_free) {
@@ -265,13 +266,13 @@ PHP_SOPHIA_METHOD(Db, set)
         RETURN_FALSE;
     }
 
-    object = sp_object(intern->db);
+    object = sp_document(intern->db);
 
     switch (Z_TYPE_P(key)) {
         default:
             convert_to_string(key);
         case IS_STRING:
-            sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+            sp_setstring(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
 #ifdef ZEND_ENGINE_3
@@ -283,12 +284,13 @@ PHP_SOPHIA_METHOD(Db, set)
                 if (key) {
                     switch (Z_TYPE_P(index)) {
                         case IS_STRING:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   Z_STRVAL_P(index), Z_STRLEN_P(index));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         Z_STRVAL_P(index), Z_STRLEN_P(index));
                             break;
                         case IS_LONG:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         &Z_LVAL_P(index),
+                                         sizeof(Z_LVAL_P(index)));
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -312,12 +314,14 @@ PHP_SOPHIA_METHOD(Db, set)
                                                  NULL) == HASH_KEY_IS_STRING) {
                     switch (Z_TYPE_PP(index)) {
                         case IS_STRING:
-                            sp_set(object, str_key,
-                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            sp_setstring(object, str_key,
+                                         Z_STRVAL_PP(index),
+                                         Z_STRLEN_PP(index));
                             break;
                         case IS_LONG:
-                            sp_set(object, str_key,
-                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            sp_setstring(object, str_key,
+                                         &Z_LVAL_PP(index),
+                                         sizeof(Z_LVAL_PP(index)));
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -329,16 +333,16 @@ PHP_SOPHIA_METHOD(Db, set)
         }
     }
 
-    sp_set(object, "value", value, value_len);
+    sp_setstring(object, "value", value, value_len);
 
     if (intern->transaction) {
         if (sp_set(intern->transaction, object) == -1) {
-            PHP_SP_ERR(E_WARNING, "Error set key: %s", key);
+            PHP_SP_ERR(E_WARNING, "Error set key");
             RETURN_FALSE;
         }
     } else {
         if (sp_set(intern->db, object) == -1) {
-            PHP_SP_ERR(E_WARNING, "Error set key: %s", key);
+            PHP_SP_ERR(E_WARNING, "Error set key");
             RETURN_FALSE;
         }
     }
@@ -364,13 +368,13 @@ PHP_SOPHIA_METHOD(Db, get)
         RETURN_FALSE;
     }
 
-    object = sp_object(intern->db);
+    object = sp_document(intern->db);
 
     switch (Z_TYPE_P(key)) {
         default:
             convert_to_string(key);
         case IS_STRING:
-            sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+            sp_setstring(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
 #ifdef ZEND_ENGINE_3
@@ -382,12 +386,13 @@ PHP_SOPHIA_METHOD(Db, get)
                 if (key) {
                     switch (Z_TYPE_P(index)) {
                         case IS_STRING:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   Z_STRVAL_P(index), Z_STRLEN_P(index));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         Z_STRVAL_P(index), Z_STRLEN_P(index));
                             break;
                         case IS_LONG:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         &Z_LVAL_P(index),
+                                         sizeof(Z_LVAL_P(index)));
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -411,12 +416,14 @@ PHP_SOPHIA_METHOD(Db, get)
                                                  NULL) == HASH_KEY_IS_STRING) {
                     switch (Z_TYPE_PP(index)) {
                         case IS_STRING:
-                            sp_set(object, str_key,
-                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            sp_setstring(object, str_key,
+                                         Z_STRVAL_PP(index),
+                                         Z_STRLEN_PP(index));
                             break;
                         case IS_LONG:
-                            sp_set(object, str_key,
-                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            sp_setstring(object, str_key,
+                                         &Z_LVAL_PP(index),
+                                         sizeof(Z_LVAL_PP(index)));
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -435,7 +442,7 @@ PHP_SOPHIA_METHOD(Db, get)
     }
 
     if (result) {
-        value = sp_get(result, "value", &value_len);
+        value = sp_getstring(result, "value", &value_len);
         if (value_len == 0) {
             RETVAL_EMPTY_STRING();
         } else if (value) {
@@ -469,13 +476,13 @@ PHP_SOPHIA_METHOD(Db, delete)
         RETURN_FALSE;
     }
 
-    object = sp_object(intern->db);
+    object = sp_document(intern->db);
 
     switch (Z_TYPE_P(key)) {
         default:
             convert_to_string(key);
         case IS_STRING:
-            sp_set(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
+            sp_setstring(object, "key", Z_STRVAL_P(key), Z_STRLEN_P(key));
             break;
         case IS_ARRAY: {
 #ifdef ZEND_ENGINE_3
@@ -487,12 +494,13 @@ PHP_SOPHIA_METHOD(Db, delete)
                 if (key) {
                     switch (Z_TYPE_P(index)) {
                         case IS_STRING:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   Z_STRVAL_P(index), Z_STRLEN_P(index));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         Z_STRVAL_P(index), Z_STRLEN_P(index));
                             break;
                         case IS_LONG:
-                            sp_set(object, ZSTR_VAL(str_key),
-                                   &Z_LVAL_P(index), sizeof(Z_LVAL_P(index)));
+                            sp_setstring(object, ZSTR_VAL(str_key),
+                                         &Z_LVAL_P(index),
+                                         sizeof(Z_LVAL_P(index)));
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -516,12 +524,14 @@ PHP_SOPHIA_METHOD(Db, delete)
                                                  NULL) == HASH_KEY_IS_STRING) {
                     switch (Z_TYPE_PP(index)) {
                         case IS_STRING:
-                            sp_set(object, str_key,
-                                   Z_STRVAL_PP(index), Z_STRLEN_PP(index));
+                            sp_setstring(object, str_key,
+                                         Z_STRVAL_PP(index),
+                                         Z_STRLEN_PP(index));
                             break;
                         case IS_LONG:
-                            sp_set(object, str_key,
-                                   &Z_LVAL_PP(index), sizeof(Z_LVAL_PP(index)));
+                            sp_setstring(object, str_key,
+                                         &Z_LVAL_PP(index),
+                                         sizeof(Z_LVAL_PP(index)));
                             break;
                         default:
                             PHP_SP_ERR(E_WARNING, "Invalid key type");
@@ -649,7 +659,6 @@ PHP_SOPHIA_METHOD(Db, close)
     }
 
     intern->env = NULL;
-    intern->ctl = NULL;
     intern->db = NULL;
     intern->transaction = NULL;
 
@@ -695,6 +704,7 @@ PHP_SOPHIA_METHOD(Db, cursor)
         RETURN_FALSE;
     }
 
+
     intern = PHP_SP_DB_OBJ(getThis());
     if (!intern) {
         RETURN_FALSE;
@@ -705,7 +715,25 @@ PHP_SOPHIA_METHOD(Db, cursor)
 }
 
 PHP_SOPHIA_API void *
-php_sp_db_object_get_database(zval *db TSRMLS_DC)
+php_sp_db_object_get_env(zval *db TSRMLS_DC)
+{
+    php_sp_db_t *intern;
+
+    if (!db) {
+        return NULL;
+    }
+
+    intern = PHP_SP_DB_OBJ_NOCHECK(db);
+
+    if (intern && intern->env) {
+        return intern->env;
+    } else {
+        return NULL;
+    }
+}
+
+PHP_SOPHIA_API void *
+php_sp_db_object_get_object(zval *db TSRMLS_DC)
 {
     php_sp_db_t *intern;
 

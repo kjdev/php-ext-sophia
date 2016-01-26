@@ -36,6 +36,7 @@
 #include "exception.h"
 
 typedef struct {
+    void *env;
     void *db;
     void *cursor;
     void *current;
@@ -54,7 +55,6 @@ typedef struct {
     smart_str order;
     zval *key;
 #endif
-    zend_bool first;
     php_sp_object_t sophia;
 #ifdef ZEND_ENGINE_3
     zend_object std;
@@ -72,11 +72,11 @@ static inline php_sp_cursor_t * php_sp_cursor_object_fetch(zval *zv, int check)
     php_sp_cursor_t *self;
 #ifdef ZEND_ENGINE_3
     self = (php_sp_cursor_t *)((char *)Z_OBJ_P(zv) - XtOffsetOf(php_sp_cursor_t, std));
-    if ((check) && (!(self) || !php_sp_db_object_get_database(&(self)->db TSRMLS_CC)))
+    if ((check) && (!(self) || !php_sp_db_object_get_object(&(self)->db TSRMLS_CC)))
 #else
     TSRMLS_FETCH();
     self = (php_sp_cursor_t *)zend_object_store_get_object(zv TSRMLS_CC);
-    if ((check) && (!(self) || !php_sp_db_object_get_database((self)->db TSRMLS_CC)))
+    if ((check) && (!(self) || !php_sp_db_object_get_object((self)->db TSRMLS_CC)))
 #endif
     {
         PHP_SP_EXCEPTION(0, "Can not iterate on closed database");

@@ -7,8 +7,8 @@ namespace Sophia;
 
 $db = new Db('multipart', array(
     'db.multipart.index.key' => 'string',
-    'db.multipart.index' => 'num',
-    'db.multipart.index.num' => 'u32',
+    'db.multipart.index' => 'key_num',
+    'db.multipart.index.key_num' => 'u32',
 ));
 
 $data = array(
@@ -24,21 +24,21 @@ $data = array(
 
 echo "*** set ***\n";
 foreach ($data as $num => $key) {
-    var_dump($db->set(array('key' => $key, 'num' => $num), $key . '-' . $num));
+    var_dump($db->set(array('key' => $key, 'key_num' => $num), $key . '-' . $num));
 }
 
 echo "*** get ***\n";
-var_dump($db->get(array('key' => 'hi', 'num' => 3)));
+var_dump($db->get(array('key' => 'hi', 'key_num' => 3)));
 foreach ($data as $num => $key) {
-    var_dump($db->get(array('key' => $key, 'num' => $num)));
+    var_dump($db->get(array('key' => $key, 'key_num' => $num)));
 }
 
 echo "*** delete ***\n";
-var_dump($db->delete(array('key' => 'hi', 'num' => 3)));
-var_dump($db->delete(array('key' => 'hi', 'num' => 10)));
+var_dump($db->delete(array('key' => 'hi', 'key_num' => 3)));
+var_dump($db->delete(array('key' => 'hi', 'key_num' => 10)));
 
 echo "*** cursor ***\n";
-$cursor = $db->cursor('>=', array('key' => 'defg', 'num' => 8));
+$cursor = $db->cursor('>=', array('key' => 'defg', 'key_num' => 8));
 foreach ($cursor as $key => $val) {
     var_dump($key);
     var_dump($val);
@@ -75,7 +75,7 @@ string(6) "defg-8"
 array(2) {
   ["key"]=>
   string(4) "defg"
-  ["num"]=>
+  ["key_num"]=>
   int(8)
 }
 string(2) "hi"
@@ -83,7 +83,7 @@ string(4) "hi-4"
 array(2) {
   ["key"]=>
   string(2) "hi"
-  ["num"]=>
+  ["key_num"]=>
   int(4)
 }
 string(5) "jklmn"
@@ -91,7 +91,7 @@ string(7) "jklmn-6"
 array(2) {
   ["key"]=>
   string(5) "jklmn"
-  ["num"]=>
+  ["key_num"]=>
   int(6)
 }
 string(5) "jklmn"
@@ -99,6 +99,6 @@ string(8) "jklmn-11"
 array(2) {
   ["key"]=>
   string(5) "jklmn"
-  ["num"]=>
+  ["key_num"]=>
   int(11)
 }

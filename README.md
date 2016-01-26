@@ -2,28 +2,20 @@
 
 This extension allows Sophia.
 
-Documentation for Sophia can be found at [» http://sphia.org](http://sphia.org).
+Documentation for Sophia can be found at
+[» http://sophia.systems](http://sophia.systems).
 
 ## Build
 
 Required install Sophia.
 
 ``` bash
+% git submodule update --init
 % phpize
 % ./configure
 % make
 % make install
 ```
-
-### Build option
-
-* --with-sophia-includedir
-
-  Sophiar include (sophia.h) directory. (ex: /usr/include)
-
-* --with-sophia-libdir
-
-  Sophia library (libsophia.so) directory. (ex: /usr/lib64)
 
 ## Configration
 

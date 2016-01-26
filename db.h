@@ -33,7 +33,6 @@ typedef struct {
     zend_object std;
 #endif
     void *env;
-    void *ctl;
     void *db;
     void *transaction;
 #ifdef ZEND_ENGINE_3
@@ -44,7 +43,8 @@ typedef struct {
 extern PHP_SOPHIA_API zend_class_entry *php_sp_db_ce;
 
 PHP_SOPHIA_API int php_sp_db_class_register(TSRMLS_D);
-PHP_SOPHIA_API void * php_sp_db_object_get_database(zval *db TSRMLS_DC);
+PHP_SOPHIA_API void * php_sp_db_object_get_env(zval *db TSRMLS_DC);
+PHP_SOPHIA_API void * php_sp_db_object_get_object(zval *db TSRMLS_DC);
 
 static inline php_sp_db_t * php_sp_db_object_fetch(zval *zv, int check)
 {
